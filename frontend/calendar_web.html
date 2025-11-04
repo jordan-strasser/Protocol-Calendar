@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lab Protocol Calendar Parser</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: #666;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        input[type="date"],
+        input[type="file"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="date"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        input[type="file"] {
+            padding: 8px;
+            cursor: pointer;
+        }
+
+        .file-info {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #666;
+            font-style: italic;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 32px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+            transform: translateY(-2px);
+        }
+
+        .btn-danger {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #ee5a5a;
+            transform: translateY(-2px);
+        }
+
+        .status-area {
+            margin-top: 30px;
+            padding: 16px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            min-height: 150px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            color: #333;
+            white-space: pre-wrap;
+            display: none;
+        }
+
+        .status-area.active {
+            display: block;
+        }
+
+        .status-area.success {
+            border-left: 4px solid #51cf66;
+        }
+
+        .status-area.error {
+            border-left: 4px solid #ff6b6b;
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .date-input-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .date-input-group input {
+            flex: 1;
+        }
+
+        .btn-small {
+            padding: 12px 20px;
+            font-size: 14px;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Lab Protocol Calendar Parser</h1>
+        <p class="subtitle">Parse protocols and manage your lab calendar</p>
+
+        <form id="calendarForm">
+            <div class="form-group">
+                <label for="protocolFile">Protocol File</label>
+                <input type="file" id="protocolFile" name="protocolFile" accept=".pdf,.doc,.docx" required>
+                <div class="file-info" id="fileInfo"></div>
+                <div class="help-text">Supported formats: PDF, DOC, DOCX</div>
+            </div>
+
+            <div class="form-group">
+                <label for="expId">Experiment ID *</label>
+                <input type="text" id="expId" name="expId" placeholder="e.g., ENC, EXP001" required>
+                <div class="help-text">Required for calendar operations</div>
+            </div>
+
+            <div class="form-group">
+                <label for="day0Date">Day 0 Date</label>
+                <div class="date-input-group">
+                    <input type="date" id="day0Date" name="day0Date">
+                    <button type="button" class="btn-secondary btn-small" onclick="setToday()">Today</button>
+                </div>
+                <div class="help-text">Start date for Day 0 (defaults to today if not set)</div>
+            </div>
+
+            <div class="form-group">
+                <label for="calendarName">Calendar Name</label>
+                <input type="text" id="calendarName" name="calendarName" value="Lab Protocols" placeholder="Lab Protocols">
+                <div class="help-text">Name of the calendar in Apple Calendar</div>
+            </div>
+
+            <div class="button-group">
+                <button type="submit" class="btn-primary" onclick="handleSubmit(event, 'add')">Add to Calendar</button>
+                <button type="button" class="btn-secondary" onclick="handleSubmit(event, 'parse')">Parse Only</button>
+                <button type="button" class="btn-danger" onclick="handleSubmit(event, 'remove')">Remove from Calendar</button>
+            </div>
+        </form>
+
+        <div id="statusArea" class="status-area"></div>
+    </div>
+
+    <script>
+        // Set today's date as default
+        document.addEventListener('DOMContentLoaded', function() {
+            setToday();
+            
+            // Update file info when file is selected
+            document.getElementById('protocolFile').addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    document.getElementById('fileInfo').textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+                }
+            });
+        });
+
+        function setToday() {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('day0Date').value = today;
+        }
+
+        function showStatus(message, type = 'success') {
+            const statusArea = document.getElementById('statusArea');
+            statusArea.textContent = message;
+            statusArea.className = `status-area active ${type}`;
+            statusArea.scrollTop = statusArea.scrollHeight;
+        }
+
+        async function handleSubmit(event, action) {
+            event.preventDefault();
+            
+            const form = document.getElementById('calendarForm');
+            const formData = new FormData(form);
+            
+            // Add action to form data
+            formData.append('action', action);
+            
+            // For remove action, we don't need the file
+            if (action === 'remove') {
+                formData.delete('protocolFile');
+            }
+
+            showStatus('Processing...', 'success');
+
+            try {
+                // Use relative URL to work with the server
+                const response = await fetch('/api/process', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    showStatus(result.message || 'Operation completed successfully!', 'success');
+                } else {
+                    showStatus(result.error || 'An error occurred', 'error');
+                }
+            } catch (error) {
+                showStatus(`Error: ${error.message}\n\nMake sure the server is running:\npython3 calendar_server.py`, 'error');
+            }
+        }
+    </script>
+</body>
+</html>
+
