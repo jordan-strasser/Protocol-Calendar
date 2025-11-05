@@ -14,11 +14,33 @@ from pathlib import Path
 import sys
 import platform
 
+# Import platform-agnostic calendar functions
+try:
+    from calendar_platform import (
+        add_to_calendar as add_to_apple_calendar,
+        remove_from_calendar as remove_from_apple_calendar,
+        find_matching_experiment_ids,
+        extract_day0_from_events
+    )
+except ImportError:
+    # Fallback for backward compatibility (will use platform-specific functions if available)
+    def add_to_apple_calendar(*args, **kwargs):
+        print("Error: Calendar backend not available. Install platform-specific dependencies.")
+        return False
+    def remove_from_apple_calendar(*args, **kwargs):
+        print("Error: Calendar backend not available. Install platform-specific dependencies.")
+        return False
+    def find_matching_experiment_ids(*args, **kwargs):
+        return {}
+    def extract_day0_from_events(*args, **kwargs):
+        return None
+
 # Export functions for use by GUI
 __all__ = [
     'extract_text_from_pdf', 'extract_text_from_docx', 'extract_text_from_doc',
     'parse_day_entries', 'parse_date', 'assign_dates', 'extract_title_and_id',
-    'add_to_apple_calendar', 'remove_from_apple_calendar'
+    'add_to_apple_calendar', 'remove_from_apple_calendar',
+    'find_matching_experiment_ids', 'extract_day0_from_events'
 ]
 
 
@@ -300,209 +322,8 @@ def print_calendar(dated_entries):
         print()
 
 
-def add_to_apple_calendar(dated_entries, exp_id, calendar_name="Lab Protocols"):
-    """
-    Add calendar events to Apple Calendar using EventKit.
-    Tags events with experiment ID for later deletion.
-    """
-    if platform.system() != 'Darwin':
-        print("Error: Apple Calendar integration only works on macOS.")
-        return False
-    
-    try:
-        from EventKit import EKEventStore, EKCalendar, EKEvent
-        from AppKit import NSDate
-    except ImportError:
-        print("Error: PyObjC not installed. Install with: pip install pyobjc-framework-EventKit")
-        return False
-    
-    try:
-        # Request access to calendar
-        event_store = EKEventStore.alloc().init()
-        
-        # Request calendar access (async)
-        import threading
-        access_granted = threading.Event()
-        
-        def access_callback(granted, error):
-            if error:
-                print(f"Error requesting calendar access: {error}")
-            access_granted.set()
-        
-        event_store.requestAccessToEntityType_completion_(
-            0,  # EKEntityTypeEvent
-            access_callback
-        )
-        
-        # Wait for access (with timeout)
-        access_granted.wait(timeout=5)
-        if not access_granted.is_set():
-            print("Error: Calendar access request timed out.")
-            return False
-        
-        # Get or create calendar
-        calendars = event_store.calendarsForEntityType_(0)  # EKEntityTypeEvent
-        calendar = None
-        
-        for cal in calendars:
-            if cal.title() == calendar_name:
-                calendar = cal
-                break
-        
-        if calendar is None:
-            # Create new calendar
-            calendar = EKCalendar.calendarForEntityType_eventStore_(0, event_store)
-            calendar.setTitle_(calendar_name)
-            # Use default calendar source (usually iCloud or local)
-            sources = event_store.sources()
-            if sources.count() > 0:
-                calendar.setSource_(sources.objectAtIndex_(0))
-            else:
-                print("Error: No calendar sources available.")
-                return False
-            
-            error = None
-            success = event_store.saveCalendar_commit_error_(calendar, True, error)
-            if not success:
-                print(f"Error: Could not create calendar '{calendar_name}'")
-                return False
-        
-        # Add events
-        added_count = 0
-        for day_num, task, calendar_date, entry_exp_id in dated_entries:
-            event = EKEvent.eventWithEventStore_(event_store)
-            
-            # Set title with experiment ID
-            title = f"ID: {exp_id}, Day {day_num}: {task}"
-            event.setTitle_(title)
-            
-            # Set date (all-day event)
-            ns_date_start = NSDate.dateWithTimeIntervalSince1970_(calendar_date.timestamp())
-            # Add 1 day for end date (all-day events need end date)
-            end_date = calendar_date + timedelta(days=1)
-            ns_date_end = NSDate.dateWithTimeIntervalSince1970_(end_date.timestamp())
-            
-            event.setStartDate_(ns_date_start)
-            event.setEndDate_(ns_date_end)
-            event.setAllDay_(True)
-            
-            # Add notes with experiment ID tag for searching
-            notes = f"[EXPERIMENT_ID:{exp_id}] {task}"
-            event.setNotes_(notes)
-            
-            event.setCalendar_(calendar)
-            
-            # Save event
-            error = None
-            success = event_store.saveEvent_span_commit_error_(event, 0, True, error)  # 0 = EKSpanThisEvent
-            if success:
-                added_count += 1
-            else:
-                print(f"Warning: Could not save event for Day {day_num}")
-        
-        print(f"\n✓ Added {added_count} events to Apple Calendar '{calendar_name}'")
-        return True
-        
-    except Exception as e:
-        print(f"Error adding events to Apple Calendar: {e}")
-        return False
-
-
-def remove_from_apple_calendar(exp_id, calendar_name="Lab Protocols"):
-    """
-    Remove all calendar events tagged with the given experiment ID from Apple Calendar.
-    """
-    if platform.system() != 'Darwin':
-        print("Error: Apple Calendar integration only works on macOS.")
-        return False
-    
-    try:
-        from EventKit import EKEventStore
-        from AppKit import NSDate
-        from datetime import datetime, timedelta
-    except ImportError:
-        print("Error: PyObjC not installed. Install with: pip install pyobjc-framework-EventKit")
-        return False
-    
-    try:
-        event_store = EKEventStore.alloc().init()
-        
-        # Request calendar access (async)
-        import threading
-        access_granted = threading.Event()
-        
-        def access_callback(granted, error):
-            if error:
-                print(f"Error requesting calendar access: {error}")
-            access_granted.set()
-        
-        event_store.requestAccessToEntityType_completion_(
-            0,  # EKEntityTypeEvent
-            access_callback
-        )
-        
-        # Wait for access (with timeout)
-        access_granted.wait(timeout=5)
-        if not access_granted.is_set():
-            print("Error: Calendar access request timed out.")
-            return False
-        
-        # Find calendar
-        calendars = event_store.calendarsForEntityType_(0)
-        calendar = None
-        
-        for cal in calendars:
-            if cal.title() == calendar_name:
-                calendar = cal
-                break
-        
-        if calendar is None:
-            print(f"Error: Calendar '{calendar_name}' not found.")
-            return False
-        
-        # Search for events with the experiment ID tag
-        # Search in a wide date range (past 2 years to future 2 years)
-        start_date = NSDate.dateWithTimeIntervalSince1970_(
-            (datetime.now() - timedelta(days=365*2)).timestamp()
-        )
-        end_date = NSDate.dateWithTimeIntervalSince1970_(
-            (datetime.now() + timedelta(days=365*2)).timestamp()
-        )
-        
-        predicate = event_store.predicateForEventsWithStartDate_endDate_calendars_(
-            start_date, end_date, [calendar]
-        )
-        
-        events = event_store.eventsMatchingPredicate_(predicate)
-        
-        deleted_count = 0
-        search_tag = f"[EXPERIMENT_ID:{exp_id}]"
-        
-        for event in events:
-            notes = event.notes()
-            title = event.title()
-            
-            # Check if event is tagged with this experiment ID
-            if notes and search_tag in notes:
-                # Also check title for experiment ID
-                if exp_id in title:
-                    error = None
-                    success = event_store.removeEvent_span_commit_error_(event, 0, True, error)
-                    if success:
-                        deleted_count += 1
-                    else:
-                        print(f"Warning: Could not delete event: {title}")
-        
-        if deleted_count > 0:
-            print(f"✓ Removed {deleted_count} events with experiment ID '{exp_id}' from Apple Calendar")
-        else:
-            print(f"No events found with experiment ID '{exp_id}'")
-        
-        return deleted_count > 0
-        
-    except Exception as e:
-        print(f"Error removing events from Apple Calendar: {e}")
-        return False
+# Calendar functions are now imported from calendar_platform.py at the top of this file
+# This provides platform-agnostic support (macOS EventKit or universal iCalendar)
 
 
 def main():

@@ -28,6 +28,8 @@ Thumbs.db
 
 # Generated files
 *_calendar.txt
+calendar_exports/
+*.ics
 
 # Temporary files
 *.tmp

@@ -1,0 +1,4 @@
+# macOS-specific dependencies
+# These are only needed on macOS for Apple Calendar integration
+pyobjc-framework-EventKit>=10.0
+

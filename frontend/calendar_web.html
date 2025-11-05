@@ -86,13 +86,13 @@
         }
 
         .button-group {
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 12px;
             margin-top: 32px;
         }
 
         button {
-            flex: 1;
             padding: 14px 24px;
             border: none;
             border-radius: 8px;
@@ -131,6 +131,16 @@
 
         .btn-danger:hover {
             background: #ee5a5a;
+            transform: translateY(-2px);
+        }
+
+        .btn-warning {
+            background: #ffa726;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #ff9800;
             transform: translateY(-2px);
         }
 
@@ -200,16 +210,16 @@
             <div class="form-group">
                 <label for="expId">Experiment ID *</label>
                 <input type="text" id="expId" name="expId" placeholder="e.g., ENC, EXP001" required>
-                <div class="help-text">Required for calendar operations</div>
+                <div class="help-text" id="expIdHelp">Required for calendar operations. For Update: use partial ID (e.g., "enc" matches enc1, enc2, enc3, etc.)</div>
             </div>
 
-            <div class="form-group">
+            <div class="form-group" id="day0Group">
                 <label for="day0Date">Day 0 Date</label>
                 <div class="date-input-group">
                     <input type="date" id="day0Date" name="day0Date">
                     <button type="button" class="btn-secondary btn-small" onclick="setToday()">Today</button>
                 </div>
-                <div class="help-text">Start date for Day 0 (defaults to today if not set)</div>
+                <div class="help-text" id="day0Help">Start date for Day 0 (defaults to today if not set). Not needed for Update - Day 0 is extracted from existing events.</div>
             </div>
 
             <div class="form-group">
@@ -220,6 +230,7 @@
 
             <div class="button-group">
                 <button type="submit" class="btn-primary" onclick="handleSubmit(event, 'add')">Add to Calendar</button>
+                <button type="button" class="btn-warning" onclick="handleSubmit(event, 'update')">Update Calendar</button>
                 <button type="button" class="btn-secondary" onclick="handleSubmit(event, 'parse')">Parse Only</button>
                 <button type="button" class="btn-danger" onclick="handleSubmit(event, 'remove')">Remove from Calendar</button>
             </div>
@@ -266,6 +277,11 @@
             // For remove action, we don't need the file
             if (action === 'remove') {
                 formData.delete('protocolFile');
+            }
+            
+            // For update action, we don't need Day 0 (it's extracted from existing events)
+            if (action === 'update') {
+                formData.delete('day0Date');
             }
 
             showStatus('Processing...', 'success');

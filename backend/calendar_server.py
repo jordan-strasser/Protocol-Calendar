@@ -26,7 +26,8 @@ try:
     from calendar_parser import (
         extract_text_from_pdf, extract_text_from_docx, extract_text_from_doc,
         parse_day_entries, parse_date, assign_dates, extract_title_and_id,
-        add_to_apple_calendar, remove_from_apple_calendar
+        add_to_apple_calendar, remove_from_apple_calendar,
+        find_matching_experiment_ids, extract_day0_from_events
     )
 except ImportError as e:
     print(f"Error importing calendar_parser: {e}")
@@ -157,6 +158,97 @@ class CalendarHandler(http.server.SimpleHTTPRequestHandler):
                                 result['error'] = f'No events found with ID "{exp_id}" or calendar not found'
                         except Exception as e:
                             result['error'] = str(e)
+                
+                elif action == 'update':
+                    # Update calendar: find matching IDs, extract Day 0, remove old events, add new ones
+                    if not file_data:
+                        result['error'] = 'Please select a protocol file'
+                    elif not exp_id:
+                        result['error'] = 'Experiment ID pattern is required (e.g., "enc" to match enc1, enc2, etc.)'
+                    else:
+                        try:
+                            # Find all experiment IDs matching the partial ID
+                            matching_ids = find_matching_experiment_ids(exp_id, calendar_name)
+                            
+                            if not matching_ids:
+                                result['error'] = f'No experiments found matching ID pattern "{exp_id}"'
+                                return
+                            
+                            # Extract Day 0 dates for each matching ID
+                            for exp_id_full, exp_data in matching_ids.items():
+                                day0_date = extract_day0_from_events(exp_data['events'])
+                                if day0_date:
+                                    exp_data['day0_date'] = day0_date
+                                else:
+                                    # If we can't extract Day 0, skip this ID
+                                    result['error'] = f'Could not extract Day 0 date for experiment ID "{exp_id_full}"'
+                                    return
+                            
+                            # Save uploaded file temporarily
+                            filename = file_data['filename']
+                            file_content = file_data['data']
+                            
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix) as tmp_file:
+                                tmp_file.write(file_content)
+                                tmp_path = tmp_file.name
+                            
+                            try:
+                                # Parse the file once
+                                file_ext = Path(filename).suffix.lower()
+                                
+                                if file_ext == '.pdf':
+                                    text = extract_text_from_pdf(tmp_path)
+                                elif file_ext == '.docx':
+                                    text = extract_text_from_docx(tmp_path)
+                                elif file_ext == '.doc':
+                                    text = extract_text_from_doc(tmp_path)
+                                else:
+                                    result['error'] = f'Unsupported file type: {file_ext}'
+                                    return
+                                
+                                # Parse day entries
+                                entries = parse_day_entries(text)
+                                if not entries:
+                                    result['error'] = 'No Day entries found in the document'
+                                    return
+                                
+                                # Update each matching experiment ID
+                                message = f'Found {len(matching_ids)} experiment(s) matching "{exp_id}":\n\n'
+                                total_updated = 0
+                                
+                                for exp_id_full, exp_data in matching_ids.items():
+                                    day0_date = exp_data['day0_date']
+                                    
+                                    # Remove old events for this ID
+                                    remove_success = remove_from_apple_calendar(exp_id_full, calendar_name)
+                                    
+                                    # Assign dates using the extracted Day 0
+                                    dated_entries = assign_dates(entries, day0_date, exp_id_full)
+                                    
+                                    # Add new events to calendar
+                                    add_success = add_to_apple_calendar(dated_entries, exp_id_full, calendar_name)
+                                    
+                                    if add_success:
+                                        message += f'✓ Updated "{exp_id_full}" (Day 0: {day0_date.strftime("%Y-%m-%d")}): {len(dated_entries)} events\n'
+                                        total_updated += 1
+                                    else:
+                                        message += f'✗ Failed to update "{exp_id_full}"\n'
+                                
+                                if total_updated > 0:
+                                    result['success'] = True
+                                    result['message'] = f'{message}\n✓ Successfully updated {total_updated} experiment(s) in calendar "{calendar_name}"'
+                                else:
+                                    result['error'] = 'Failed to update any experiments'
+                            
+                            finally:
+                                # Clean up temp file
+                                try:
+                                    os.unlink(tmp_path)
+                                except:
+                                    pass
+                        
+                        except Exception as e:
+                            result['error'] = f'Error updating calendar: {str(e)}'
                 
                 else:
                     # Parse and optionally add to calendar
